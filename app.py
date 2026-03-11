@@ -13,8 +13,8 @@ from reportlab.pdfgen import canvas
 # =========================
 # Google Sheets 接続設定
 # =========================
-SPREADSHEET_NAME = "nail_salon_sales"
 WORKSHEET_NAME = "sales"
+SPREADSHEET_KEY = "14b762DqI4pMbS9Z3ECcrSg1oDywsP2Tpiae98QUbQbw"
 
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -27,7 +27,7 @@ creds = Credentials.from_service_account_info(
 )
 
 client = gspread.authorize(creds)
-spreadsheet = client.open(SPREADSHEET_NAME)
+spreadsheet = client.open_by_key(SPREADSHEET_KEY)
 sheet = spreadsheet.worksheet(WORKSHEET_NAME)
 
 # =========================
@@ -64,22 +64,8 @@ def init_sheet():
 
     current_headers = values[0]
 
-    # ヘッダーが足りない場合に補完
     if current_headers != headers:
-        # 既存ヘッダーに不足列がある場合の救済
-        if "payment_method" not in current_headers:
-            current_headers.append("payment_method")
-        if "id" not in current_headers:
-            current_headers.insert(0, "id")
-        if "created_at" not in current_headers:
-            current_headers.append("created_at")
-
-        # 正しいヘッダーで上書き
         sheet.update("A1:G1", [headers])
-
-        # 必要なら既存データも整形したいところだが、
-        # 今回は新規運用前提としてヘッダーのみ統一
-        # 既存データ移行が必要なら別途移行処理を実施
 
 
 def get_next_id(df: pd.DataFrame) -> int:
@@ -111,7 +97,6 @@ def load_data():
 
     df = pd.DataFrame(records)
 
-    # 足りない列を補完
     expected_cols = [
         "id",
         "customer_name",
@@ -125,16 +110,14 @@ def load_data():
         if col not in df.columns:
             df[col] = None
 
-    # 型変換
     df["id"] = pd.to_numeric(df["id"], errors="coerce")
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
     df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
     df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
 
-    # 無効行を除外
     df = df.dropna(subset=["sale_date"]).copy()
-
     df = df.sort_values(["sale_date", "id"], ascending=False)
+
     return df
 
 
@@ -170,11 +153,11 @@ def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment
         return
 
     headers = values[0]
-    id_idx = headers.index("id") if "id" in headers else 0
+    id_idx = headers.index("id")
 
     target_row_number = None
 
-    for i, row in enumerate(values[1:], start=2):  # スプレッドシート行番号
+    for i, row in enumerate(values[1:], start=2):
         if len(row) > id_idx and str(row[id_idx]) == str(sale_id):
             target_row_number = i
             break
@@ -182,10 +165,9 @@ def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment
     if target_row_number is None:
         return
 
-    created_at = ""
-    created_at_idx = headers.index("created_at") if "created_at" in headers else None
-    if created_at_idx is not None and len(values[target_row_number - 1]) > created_at_idx:
-        created_at = values[target_row_number - 1][created_at_idx]
+    created_at_idx = headers.index("created_at")
+    current_row = values[target_row_number - 1]
+    created_at = current_row[created_at_idx] if len(current_row) > created_at_idx else ""
 
     updated_row = [
         sale_id,
@@ -197,8 +179,7 @@ def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment
         created_at if created_at else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ]
 
-    end_col = "G"
-    sheet.update(f"A{target_row_number}:{end_col}{target_row_number}", [updated_row])
+    sheet.update(f"A{target_row_number}:G{target_row_number}", [updated_row])
     load_data.clear()
     yearly_summary.clear()
 
@@ -213,7 +194,7 @@ def delete_sale(sale_id: int):
         return
 
     headers = values[0]
-    id_idx = headers.index("id") if "id" in headers else 0
+    id_idx = headers.index("id")
 
     target_row_number = None
 
