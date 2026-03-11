@@ -15,7 +15,7 @@ from reportlab.pdfgen import canvas
 # Google Sheets 接続設定
 # =========================
 WORKSHEET_NAME = "sales"
-SPREADSHEET_KEY = "14b762DqI4pMbS9Z3ECcrSg1oDywsP2Tpiae98QUbQbw"
+SPREADSHEET_KEY = "1hXv_yYW-z4jW0ItuUkys0wa9lkjZBk4tj-MB43stxgs"
 
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -712,6 +712,7 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
