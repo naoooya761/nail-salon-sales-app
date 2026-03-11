@@ -1,3 +1,4 @@
+import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -6,15 +7,14 @@ scope = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-creds = Credentials.from_service_account_file(
-    "service_account.json",
+creds = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
     scopes=scope
 )
 
 client = gspread.authorize(creds)
 
 sheet = client.open("nail_salon_sales").sheet1
-import streamlit as st
 import sqlite3
 from datetime import date, datetime
 import pandas as pd
@@ -617,5 +617,6 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 
