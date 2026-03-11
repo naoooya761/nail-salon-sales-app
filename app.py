@@ -7,7 +7,7 @@ scope = [
 ]
 
 creds = Credentials.from_service_account_file(
-    "nail-salon-app-489903-5551bdd3268c.json",
+    "service_account.json",
     scopes=scope
 )
 
@@ -617,4 +617,5 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
 
