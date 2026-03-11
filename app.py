@@ -1,6 +1,20 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import date, datetime
+import pandas as pd
+import plotly.express as px
+import io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfgen import canvas
+
+# =========================
+# Google Sheets 接続設定
+# =========================
+SPREADSHEET_NAME = "nail_salon_sales"
+WORKSHEET_NAME = "sales"
 
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -13,20 +27,12 @@ creds = Credentials.from_service_account_info(
 )
 
 client = gspread.authorize(creds)
+spreadsheet = client.open(SPREADSHEET_NAME)
+sheet = spreadsheet.worksheet(WORKSHEET_NAME)
 
-sheet = client.open("nail_salon_sales").sheet1
-import sqlite3
-from datetime import date, datetime
-import pandas as pd
-import plotly.express as px
-import io
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.pdfgen import canvas
-
-DB_PATH = "nail_salon_sales.db"
-
+# =========================
+# Streamlit 基本設定
+# =========================
 st.set_page_config(
     page_title="Nail Salon Sales",
     page_icon="💅",
@@ -36,99 +42,196 @@ st.set_page_config(
 
 pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
 
+# =========================
+# Google Sheets 初期化
+# =========================
+def init_sheet():
+    headers = [
+        "id",
+        "customer_name",
+        "reservation_type",
+        "payment_method",
+        "amount",
+        "sale_date",
+        "created_at"
+    ]
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sales (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_name TEXT NOT NULL,
-            reservation_type TEXT NOT NULL,
-            payment_method TEXT NOT NULL DEFAULT '現金',
-            amount INTEGER NOT NULL,
-            sale_date TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    conn.commit()
+    values = sheet.get_all_values()
 
-    cur.execute("PRAGMA table_info(sales)")
-    columns = [row[1] for row in cur.fetchall()]
-    if "payment_method" not in columns:
-        cur.execute("ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT '現金'")
-        conn.commit()
+    if not values:
+        sheet.append_row(headers)
+        return
 
-    conn.close()
+    current_headers = values[0]
+
+    # ヘッダーが足りない場合に補完
+    if current_headers != headers:
+        # 既存ヘッダーに不足列がある場合の救済
+        if "payment_method" not in current_headers:
+            current_headers.append("payment_method")
+        if "id" not in current_headers:
+            current_headers.insert(0, "id")
+        if "created_at" not in current_headers:
+            current_headers.append("created_at")
+
+        # 正しいヘッダーで上書き
+        sheet.update("A1:G1", [headers])
+
+        # 必要なら既存データも整形したいところだが、
+        # 今回は新規運用前提としてヘッダーのみ統一
+        # 既存データ移行が必要なら別途移行処理を実施
 
 
+def get_next_id(df: pd.DataFrame) -> int:
+    if df.empty or "id" not in df.columns:
+        return 1
+    ids = pd.to_numeric(df["id"], errors="coerce").dropna()
+    if ids.empty:
+        return 1
+    return int(ids.max()) + 1
+
+
+# =========================
+# データ読込
+# =========================
 @st.cache_data(ttl=2)
 def load_data():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM sales ORDER BY sale_date DESC, id DESC", conn)
-    conn.close()
-    if not df.empty:
-        df["sale_date"] = pd.to_datetime(df["sale_date"])
-        df["created_at"] = pd.to_datetime(df["created_at"])
+    records = sheet.get_all_records()
+
+    if not records:
+        return pd.DataFrame(columns=[
+            "id",
+            "customer_name",
+            "reservation_type",
+            "payment_method",
+            "amount",
+            "sale_date",
+            "created_at"
+        ])
+
+    df = pd.DataFrame(records)
+
+    # 足りない列を補完
+    expected_cols = [
+        "id",
+        "customer_name",
+        "reservation_type",
+        "payment_method",
+        "amount",
+        "sale_date",
+        "created_at"
+    ]
+    for col in expected_cols:
+        if col not in df.columns:
+            df[col] = None
+
+    # 型変換
+    df["id"] = pd.to_numeric(df["id"], errors="coerce")
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0).astype(int)
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+
+    # 無効行を除外
+    df = df.dropna(subset=["sale_date"]).copy()
+
+    df = df.sort_values(["sale_date", "id"], ascending=False)
     return df
 
 
+# =========================
+# 追加
+# =========================
 def insert_sale(customer_name: str, reservation_type: str, payment_method: str, amount: int, sale_date: date):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO sales (customer_name, reservation_type, payment_method, amount, sale_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            customer_name,
-            reservation_type,
-            payment_method,
-            amount,
-            sale_date.strftime("%Y-%m-%d"),
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-    )
-    conn.commit()
-    conn.close()
+    df = load_data()
+    new_id = get_next_id(df)
+
+    new_row = [
+        new_id,
+        customer_name,
+        reservation_type,
+        payment_method,
+        amount,
+        sale_date.strftime("%Y-%m-%d"),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ]
+
+    sheet.append_row(new_row, value_input_option="USER_ENTERED")
     load_data.clear()
+    yearly_summary.clear()
 
 
+# =========================
+# 更新
+# =========================
 def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment_method: str, amount: int, sale_date: date):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        UPDATE sales
-        SET customer_name = ?, reservation_type = ?, payment_method = ?, amount = ?, sale_date = ?
-        WHERE id = ?
-        """,
-        (
-            customer_name,
-            reservation_type,
-            payment_method,
-            amount,
-            sale_date.strftime("%Y-%m-%d"),
-            sale_id
-        )
-    )
-    conn.commit()
-    conn.close()
+    values = sheet.get_all_values()
+
+    if len(values) <= 1:
+        return
+
+    headers = values[0]
+    id_idx = headers.index("id") if "id" in headers else 0
+
+    target_row_number = None
+
+    for i, row in enumerate(values[1:], start=2):  # スプレッドシート行番号
+        if len(row) > id_idx and str(row[id_idx]) == str(sale_id):
+            target_row_number = i
+            break
+
+    if target_row_number is None:
+        return
+
+    created_at = ""
+    created_at_idx = headers.index("created_at") if "created_at" in headers else None
+    if created_at_idx is not None and len(values[target_row_number - 1]) > created_at_idx:
+        created_at = values[target_row_number - 1][created_at_idx]
+
+    updated_row = [
+        sale_id,
+        customer_name,
+        reservation_type,
+        payment_method,
+        amount,
+        sale_date.strftime("%Y-%m-%d"),
+        created_at if created_at else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ]
+
+    end_col = "G"
+    sheet.update(f"A{target_row_number}:{end_col}{target_row_number}", [updated_row])
     load_data.clear()
+    yearly_summary.clear()
 
 
+# =========================
+# 削除
+# =========================
 def delete_sale(sale_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM sales WHERE id = ?", (sale_id,))
-    conn.commit()
-    conn.close()
+    values = sheet.get_all_values()
+
+    if len(values) <= 1:
+        return
+
+    headers = values[0]
+    id_idx = headers.index("id") if "id" in headers else 0
+
+    target_row_number = None
+
+    for i, row in enumerate(values[1:], start=2):
+        if len(row) > id_idx and str(row[id_idx]) == str(sale_id):
+            target_row_number = i
+            break
+
+    if target_row_number is not None:
+        sheet.delete_rows(target_row_number)
+
     load_data.clear()
+    yearly_summary.clear()
 
 
+# =========================
+# 集計
+# =========================
 def monthly_summary(year: int, month: int):
     df = load_data()
     if df.empty:
@@ -180,6 +283,9 @@ def yearly_summary(year: int):
     return target, total, by_type, by_payment, by_month, by_name
 
 
+# =========================
+# PDF
+# =========================
 def _draw_pdf_header(c, title: str, subtitle: str):
     c.setFont("HeiseiKakuGo-W5", 18)
     c.drawString(40, 800, title)
@@ -297,8 +403,14 @@ def build_yearly_pdf(year: int):
     return buffer.getvalue()
 
 
-init_db()
+# =========================
+# 初期化
+# =========================
+init_sheet()
 
+# =========================
+# UI
+# =========================
 st.markdown(
     """
     <meta name="theme-color" content="#f6dbe7">
@@ -417,6 +529,7 @@ with tab1:
             else:
                 insert_sale(customer_name.strip(), reservation_type, payment_method, int(amount), sale_date)
                 st.success("売上を登録しました。")
+                st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -617,6 +730,3 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-
