@@ -49,7 +49,7 @@ def init_sheet():
     headers = [
         "id",
         "customer_name",
-        "reservation_type",
+        "customer_type",
         "payment_method",
         "amount",
         "sale_date",
@@ -88,7 +88,7 @@ def load_data():
         return pd.DataFrame(columns=[
             "id",
             "customer_name",
-            "reservation_type",
+            "customer_type",
             "payment_method",
             "amount",
             "sale_date",
@@ -100,7 +100,7 @@ def load_data():
     expected_cols = [
         "id",
         "customer_name",
-        "reservation_type",
+        "customer_type",
         "payment_method",
         "amount",
         "sale_date",
@@ -124,14 +124,14 @@ def load_data():
 # =========================
 # 追加
 # =========================
-def insert_sale(customer_name: str, reservation_type: str, payment_method: str, amount: int, sale_date: date):
+def insert_sale(customer_name: str, customer_type: str, payment_method: str, amount: int, sale_date: date):
     df = load_data()
     new_id = get_next_id(df)
 
     new_row = [
         new_id,
         customer_name,
-        reservation_type,
+        customer_type,
         payment_method,
         amount,
         sale_date.strftime("%Y-%m-%d"),
@@ -146,7 +146,7 @@ def insert_sale(customer_name: str, reservation_type: str, payment_method: str, 
 # =========================
 # 更新
 # =========================
-def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment_method: str, amount: int, sale_date: date):
+def update_sale(sale_id: int, customer_name: str, customer_type: str, payment_method: str, amount: int, sale_date: date):
     values = sheet.get_all_values()
 
     if len(values) <= 1:
@@ -172,7 +172,7 @@ def update_sale(sale_id: int, customer_name: str, reservation_type: str, payment
     updated_row = [
         sale_id,
         customer_name,
-        reservation_type,
+        customer_type,
         payment_method,
         amount,
         sale_date.strftime("%Y-%m-%d"),
@@ -224,8 +224,8 @@ def monthly_summary(year: int, month: int):
 
     total = int(target["amount"].sum())
 
-    by_type = target.groupby("reservation_type")["amount"].agg(["sum", "count"]).reset_index()
-    by_type.columns = ["予約経路", "売上金額", "件数"]
+    by_type = target.groupby("customer_type")["amount"].agg(["sum", "count"]).reset_index()
+    by_type.columns = ["区分", "売上金額", "件数"]
 
     by_payment = target.groupby("payment_method")["amount"].agg(["sum", "count"]).reset_index()
     by_payment.columns = ["支払い方法", "売上金額", "件数"]
@@ -248,8 +248,8 @@ def yearly_summary(year: int):
 
     total = int(target["amount"].sum())
 
-    by_type = target.groupby("reservation_type")["amount"].agg(["sum", "count"]).reset_index()
-    by_type.columns = ["予約経路", "売上金額", "件数"]
+    by_type = target.groupby("customer_type")["amount"].agg(["sum", "count"]).reset_index()
+    by_type.columns = ["区分", "売上金額", "件数"]
 
     by_payment = target.groupby("payment_method")["amount"].agg(["sum", "count"]).reset_index()
     by_payment.columns = ["支払い方法", "売上金額", "件数"]
@@ -303,14 +303,14 @@ def build_monthly_pdf(year: int, month: int):
         f"件数: {len(month_df)}件",
         f"客単価: ¥{(month_total / len(month_df)) if len(month_df) else 0:,.0f}",
         "",
-        "【予約経路ごとの内訳】"
+        "【区分ごとの内訳】"
     ]
 
     if month_by_type.empty:
         lines.append("データなし")
     else:
         for _, row in month_by_type.iterrows():
-            lines.append(f"・{row['予約経路']}: ¥{int(row['売上金額']):,} / {int(row['件数'])}件")
+            lines.append(f"・{row['区分']}: ¥{int(row['売上金額']):,} / {int(row['件数'])}件")
 
     lines += ["", "【支払い方法ごとの内訳】"]
     if month_by_payment.empty:
@@ -348,14 +348,14 @@ def build_yearly_pdf(year: int):
         f"件数: {len(year_df)}件",
         f"客単価: ¥{(year_total / len(year_df)) if len(year_df) else 0:,.0f}",
         "",
-        "【予約経路ごとの内訳】"
+        "【区分ごとの内訳】"
     ]
 
     if year_by_type.empty:
         lines.append("データなし")
     else:
         for _, row in year_by_type.iterrows():
-            lines.append(f"・{row['予約経路']}: ¥{int(row['売上金額']):,} / {int(row['件数'])}件")
+            lines.append(f"・{row['区分']}: ¥{int(row['売上金額']):,} / {int(row['件数'])}件")
 
     lines += ["", "【支払い方法ごとの内訳】"]
     if year_by_payment.empty:
@@ -483,18 +483,18 @@ tab1, tab2, tab3 = st.tabs(["➕ 売上入力・編集", "📅 月別集計", "�
 with tab1:
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("売上入力")
-    st.caption("入力フロー：名前 → 予約経路 → 支払い方法 → 売上金額 → 完了")
+    st.caption("入力フロー：名前 → 区分 → 支払い方法 → 売上金額 → 完了")
 
     with st.form("sale_input_form", clear_on_submit=True):
         customer_name = st.text_input("① 名前を入力", placeholder="例：山田さん")
-        reservation_type = st.radio(
-            "② 予約経路を選択",
-            ["友達", "ネイリー", "DM"],
+        customer_type = st.radio(
+            "② 区分を選択",
+            ["リピーター", "新規", "知り合い"],
             horizontal=True
         )
         payment_method = st.radio(
             "③ 支払い方法を選択",
-            ["現金", "PayPay"],
+            ["現金", "ネイリー", "PayPay"],
             horizontal=True
         )
         amount = st.number_input("④ 売上金を入力", min_value=0, step=500, placeholder=7000)
@@ -508,7 +508,7 @@ with tab1:
             elif amount <= 0:
                 st.error("売上金は1円以上で入力してください。")
             else:
-                insert_sale(customer_name.strip(), reservation_type, payment_method, int(amount), sale_date)
+                insert_sale(customer_name.strip(), customer_type, payment_method, int(amount), sale_date)
                 st.success("売上を登録しました。")
                 st.rerun()
 
@@ -522,8 +522,8 @@ with tab1:
         st.info("まだ売上データがありません。")
     else:
         recent = df.copy().sort_values(["sale_date", "id"], ascending=False).head(20)
-        recent_display = recent[["sale_date", "customer_name", "reservation_type", "payment_method", "amount"]].copy()
-        recent_display.columns = ["日付", "名前", "予約経路", "支払い方法", "売上金額"]
+        recent_display = recent[["sale_date", "customer_name", "customer_type", "payment_method", "amount"]].copy()
+        recent_display.columns = ["日付", "名前", "区分", "支払い方法", "売上金額"]
         recent_display["日付"] = recent_display["日付"].dt.strftime("%Y-%m-%d")
         recent_display["売上金額"] = recent_display["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(recent_display, use_container_width=True, hide_index=True)
@@ -536,7 +536,7 @@ with tab1:
     else:
         edit_df = df.copy().sort_values(["sale_date", "id"], ascending=False)
         edit_df["label"] = edit_df.apply(
-            lambda row: f'{row["sale_date"].strftime("%Y-%m-%d")} | {row["customer_name"]} | {row["reservation_type"]} | {row["payment_method"]} | ¥{row["amount"]:,.0f}',
+            lambda row: f'{row["sale_date"].strftime("%Y-%m-%d")} | {row["customer_name"]} | {row["customer_type"]} | {row["payment_method"]} | ¥{row["amount"]:,.0f}',
             axis=1
         )
         selected_label = st.selectbox("編集・削除するデータを選択", edit_df["label"].tolist())
@@ -544,13 +544,14 @@ with tab1:
 
         with st.form("edit_sale_form"):
             edit_name = st.text_input("名前", value=selected_row["customer_name"])
-            reservation_options = ["友達", "ネイリー", "DM"]
-            payment_options = ["現金", "PayPay"]
+            customer_type_options = ["リピーター", "新規", "知り合い"]
+            payment_options = ["現金", "ネイリー", "PayPay"]
 
-            edit_reservation = st.radio(
-                "予約経路",
-                reservation_options,
-                index=reservation_options.index(selected_row["reservation_type"]),
+            current_type = selected_row["customer_type"] if selected_row["customer_type"] in customer_type_options else "新規"
+            edit_customer_type = st.radio(
+                "区分",
+                customer_type_options,
+                index=customer_type_options.index(current_type),
                 horizontal=True
             )
 
@@ -577,7 +578,7 @@ with tab1:
                     update_sale(
                         int(selected_row["id"]),
                         edit_name.strip(),
-                        edit_reservation,
+                        edit_customer_type,
                         edit_payment,
                         int(edit_amount),
                         edit_date
@@ -619,11 +620,11 @@ with tab2:
         st.info("この月のデータはありません。")
     else:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
-        st.markdown("**予約経路ごとの内訳**")
+        st.markdown("**区分ごとの内訳**")
         display_type = month_by_type.copy()
         display_type["売上金額"] = display_type["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_type, use_container_width=True, hide_index=True)
-        fig_type = px.pie(month_by_type, names="予約経路", values="売上金額", hole=0.45)
+        fig_type = px.pie(month_by_type, names="区分", values="売上金額", hole=0.45)
         st.plotly_chart(fig_type, use_container_width=True, key=f"month_type_{selected_year}_{selected_month}")
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -679,11 +680,11 @@ with tab3:
         st.info("この年のデータはありません。")
     else:
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
-        st.markdown("**予約経路ごとの内訳**")
+        st.markdown("**区分ごとの内訳**")
         display_year_type = year_by_type.copy()
         display_year_type["売上金額"] = display_year_type["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_type, use_container_width=True, hide_index=True)
-        fig_year_type = px.pie(year_by_type, names="予約経路", values="売上金額", hole=0.45)
+        fig_year_type = px.pie(year_by_type, names="区分", values="売上金額", hole=0.45)
         st.plotly_chart(fig_year_type, use_container_width=True, key=f"year_type_{selected_year_for_yearly}")
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -711,10 +712,3 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-
-
-
