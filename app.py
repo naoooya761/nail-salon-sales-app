@@ -1,6 +1,7 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+st.write(st.secrets["gcp_service_account"]["client_email"])
 from datetime import date, datetime
 import pandas as pd
 import plotly.express as px
@@ -711,4 +712,5 @@ with tab3:
         display_year_name["売上金額"] = display_year_name["売上金額"].map(lambda x: f"¥{x:,.0f}")
         st.dataframe(display_year_name, use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
 
